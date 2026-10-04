@@ -18,6 +18,10 @@ class Config:
     AI_PROVIDER = os.getenv("AI_PROVIDER", "auto").lower().strip()
     AI_MODEL = os.getenv("AI_MODEL", "").strip()
 
+    # --- Configuracoes Llama Local (ZeroGPU + LoRA) ---
+    LOCAL_MODEL_ID = os.getenv("LOCAL_MODEL_ID", "NousResearch/Meta-Llama-3-8B-Instruct").strip()
+    LORA_ADAPTER_PATH = os.getenv("LORA_ADAPTER_PATH", "").strip()
+
     CATALOG_API_URL = os.getenv("CATALOG_API_URL", "").strip()
     PRICES_API_URL = os.getenv("PRICES_API_URL", "").strip()
     HOURS_API_URL = os.getenv("HOURS_API_URL", "").strip()
@@ -71,7 +75,9 @@ class Config:
             return "mistral"
         if cls.GEMINI_API_KEY:
             return "gemini"
-        return "none"
+        
+        # Se nenhuma chave externa foi dada, assumimos uso intensivo do GPU local!
+        return "local_llama"
 
     @classmethod
     def get_model(cls, provider: str) -> str:

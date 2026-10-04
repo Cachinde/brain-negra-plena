@@ -38,6 +38,10 @@ class AIEngine:
         try:
             if provider == "gemini":
                 resposta = self._call_gemini(system, mensagens[1]["content"])
+            elif provider == "local_llama":
+                from local_llm import LocalLlamaEngine
+                engine_local = LocalLlamaEngine.get_instance()
+                resposta = engine_local.generate(mensagens)
             else:
                 resposta = self._call_openai_compatible(provider, mensagens)
 
