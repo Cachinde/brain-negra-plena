@@ -1,56 +1,81 @@
-﻿import gradio as gr
-import spaces
-from fastapi import FastAPI, Depends, Header, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from config import Config
+import os
+
+import gradio as gr
+import uvicorn
+
+try:
+    import spaces
+
+    print(f"[boot] spaces real: {getattr(spaces, '__file__', '?')}", flush=True)
+except ImportError:  # fora do ZeroGPU (dev local)
+    print("[boot] AVISO: pacote 'spaces' ausente, fallback local (ZeroGPU desligado)", flush=True)
+
+    class _SpacesFallback:
+        @staticmethod
+        def GPU(task=None, **kwargs):
+            if task is None:
+                return lambda fn: fn
+            return task
+
+    spaces = _SpacesFallback()
+
 from ai_engine import AIEngine
-from models import EscutarPayload, EscutarResponse
+from config import Config
+from main import app as api_app
 
-engine = AIEngine()
+PORT = int(os.getenv("PORT") or os.getenv("GRADIO_SERVER_PORT") or 7860)
 
-# ---------- FastAPI (WhatsApp Bot envia pedidos aqui) ----------
-api = FastAPI(title="Plenitude API")
-api.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+_engine = AIEngine()
 
-def require_token(authorization: str = Header(default="")):
-    if not Config.API_AUTH_TOKEN:
-        return
-    if authorization != f"Bearer {Config.API_AUTH_TOKEN}":
-        raise HTTPException(status_code=401, detail="Token invalido")
 
-@api.get("/health")
-@api.get("/api/health")
-def health():
-    return {"status": "ok"}
+def _demo_reply(pergunta: str) -> str:
+    pergunta = (pergunta or "").strip()
+    if not pergunta:
+        return "Escreve uma pergunta, por exemplo: quanto custa a pizza?"
+    return _engine.generate_reply("demo", pergunta, "Visitante")
 
-@api.post("/escutar", response_model=EscutarResponse)
-@api.post("/api/escutar", response_model=EscutarResponse)
-def escutar(payload: EscutarPayload, _=Depends(require_token)):
-    cliente = payload.numero_crm or payload.numero or "unknown"
-    texto = payload.texto.strip()
-    if not texto and not payload.audio_base64:
-        return EscutarResponse(texto="Nao consegui ler a sua mensagem. Pode escrever de novo?")
-    if not texto:
-        texto = "(audio recebido)"
-    resposta = engine.generate_reply(cliente, texto, payload.nome or "Cliente")
-    return EscutarResponse(texto=resposta)
 
-# ---------- Gradio (Interface visual + ZeroGPU) ----------
-@spaces.GPU
-def plenitude_chat(message, history):
-    if not message or not message.strip():
-        return "Por favor, escreva a sua mensagem."
-    return engine.generate_reply("web_user", message, "Visitante")
+@spaces.GPU(duration=120)
+def _zerogpu_status() -> str:
+    return "ZeroGPU activo neste Space."
 
-_demo = gr.ChatInterface(
-    fn=plenitude_chat,
-    title="Plenitude - Negra Plena",
-    description="Assistente virtual da pastelaria Negra Plena. Desenvolvida pela Softedge.",
-)
 
-# Monta o Gradio por cima do FastAPI (ambos na mesma porta 7860)
-app = gr.mount_gradio_app(api, _demo, path="/")
+api_app.router.routes = [r for r in api_app.router.routes if getattr(r, "path", None) != "/"]
+
+with gr.Blocks(title=f"{Config.ASSISTANT_NAME} - {Config.COMPANY_NAME}") as demo:
+    gr.Markdown(
+        f"# {Config.ASSISTANT_NAME} - cérebro da {Config.COMPANY_NAME}\n"
+        "API de atendimento usada pelo bot WhatsApp.  \n"
+        "`POST /api/escutar` · `GET /health` · `GET /docs`"
+    )
+    entrada = gr.Textbox(label="Pergunta de teste", placeholder="quanto custa a pizza?")
+    btn = gr.Button("Enviar", variant="primary")
+    saida = gr.Markdown()
+    btn.click(_demo_reply, inputs=entrada, outputs=saida)
+    entrada.submit(_demo_reply, inputs=entrada, outputs=saida)
+    gr.Button("Estado ZeroGPU").click(_zerogpu_status, inputs=None, outputs=saida)
+
+# SSR desligado: o proxy Node do Gradio fica com a 7860 e o uvicorn precisa dela.
+app = gr.mount_gradio_app(api_app, demo, path="/", ssr_mode=False)
+
+# ZeroGPU: o demo TEM de ser lançado para o scan de startup detectar o @spaces.GPU.
+# Padrão comprovado (Gradio + ZeroGPU + Uvicorn): launch interno não-bloqueante
+# numa porta livre e fecha; o tráfego real é servido pelo uvicorn na $PORT.
+try:
+    demo.launch(prevent_thread_lock=True, server_name="127.0.0.1", server_port=8000)
+    demo.close()
+    print("[boot] demo lançado e fechado para o scan ZeroGPU", flush=True)
+except Exception as exc:
+    print(f"[boot] lançamento interno do demo falhou: {exc!r}", flush=True)
+
+# Pré-aquecimento do Llama local: baixa os pesos UMA vez (depois usa o cache
+# do disco) para a primeira resposta não pagar o download. Falha silenciosa
+# com fallback para as APIs externas — nunca impede o arranque.
+try:
+    from local_llm import _ensure_loaded as _warm_llama
+    _warm_llama()
+except Exception as exc:
+    print(f"[boot] warmup Llama ignorado: {exc!r}", flush=True)
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")

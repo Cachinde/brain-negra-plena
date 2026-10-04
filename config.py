@@ -31,6 +31,31 @@ class Config:
     COMPANY_NAME = os.getenv("COMPANY_NAME", "Negra Plena")
     ASSISTANT_NAME = os.getenv("ASSISTANT_NAME", "Plenitude")
 
+    # Preços oficiais — exigido por catalog.py (não remover).
+    OFFICIAL_PRICES = """
+PREÇOS OFICIAIS (prioridade máxima — usa estes valores; não inventes outros):
+
+Pizzas
+- Pequena: 5.000 Kz
+- Média: 7.000 Kz
+- Grande: 9.500 Kz
+
+Bolo no pote (artigo especial da marca): 1.500 Kz
+
+Doces e salgados — vendidos por DÚZIA
+- Dúzia de mini pizzas: 9.000 Kz
+- Dúzia de rissóis: 9.000 Kz
+- Dúzia de enroladinhos de pão de chouriço: 10.000 Kz
+- Dúzia de mini pudim: 12.000 Kz
+- Dúzia de bolas de Berlim: 12.000 Kz
+
+Notas de preço
+- Doces incluem: bola de Berlim, bolinho, enroladinho de coco e restantes doces da casa.
+- Salgados incluem: chamuça, pastel de massa tenra, pão com chouriço, enroladinho de chouriço e restantes salgados da casa.
+- Mousse, pudim e similares também são por dúzia (quando aplicável).
+- Se o cliente pedir um produto sem preço listado, diz que a equipa confirma o valor.
+""".strip()
+
     SYSTEM_PROMPT = (
         "Voce e a Plenitude, assistente virtual oficial de atendimento da Negra Plena.\n\n"
         "Identidade\n"

@@ -5,7 +5,7 @@ import spaces
 
 from ai_engine import AIEngine
 from config import Config
-from models import EscutarPayload, EscutarResponse
+from models import EscutarPayload, EscutarResponse, FeedbackPayload, FeedbackResponse
 
 app = FastAPI(
     title="Plenitude — Cerebro Negra Plena",
@@ -68,5 +68,16 @@ def escutar(payload: EscutarPayload, _: None = Depends(require_token)):
     if not texto and payload.audio_base64:
         texto = "(o cliente enviou um audio; transcricao na GPU ainda em preparacao)"
 
-    resposta = engine.generate_reply(cliente, texto, payload.nome or "Cliente")
-    return EscutarResponse(texto=resposta)
+    resposta, mensagem_id = engine.responder(cliente, texto, payload.nome or "Cliente")
+    return EscutarResponse(texto=resposta, mensagem_id=mensagem_id)
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+@app.post("/api/feedback", response_model=FeedbackResponse)
+def feedback(payload: FeedbackPayload, _: None = Depends(require_token)):
+    ok = engine.learning.rate(
+        payload.mensagem_id, payload.nota, payload.comentario or ""
+    )
+    if ok:
+        return FeedbackResponse(ok=True, detalhe="Avaliação registada. Obrigado!")
+    return FeedbackResponse(ok=False, detalhe="mensagem_id não encontrado.")
