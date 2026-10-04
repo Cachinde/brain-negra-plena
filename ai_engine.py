@@ -1,10 +1,23 @@
 ﻿import requests
+import re
 import uuid
 from config import Config
 from memory import MemoryManager
 from catalog import CatalogService
 from learning import LearningStore
 from profiles import ProfileStore
+
+
+_SAUDACAO_INICIAL = re.compile(
+    r"^\s*(ol[aá]|oi|bom dia|boa tarde|boa noite)\b[^,;:.!?…\n]*[,;:.!?…]?\s*",
+    re.IGNORECASE,
+)
+
+
+def tirar_saudacao(resposta: str) -> str:
+    """Corta saudação inicial repetida ('Olá Isaac! ...'). Nunca devolve vazio."""
+    cortada = _SAUDACAO_INICIAL.sub("", resposta or "", count=1).lstrip()
+    return cortada if cortada else (resposta or "").strip()
 
 
 class AIEngine:
@@ -112,6 +125,10 @@ class AIEngine:
                 "Pode repetir a sua mensagem daqui a instantes?",
                 mensagem_id,
             )
+
+        era_conhecido = int(self.profiles.obter(numero_crm).get("n_trocas", 0) or 0) > 0
+        if era_conhecido:
+            resposta = tirar_saudacao(resposta)
 
         self.memory.add_message(numero_crm, "user", user_text)
         self.memory.add_message(numero_crm, "model", resposta)
