@@ -9,13 +9,6 @@ class AIEngine:
         self.catalog = CatalogService()
 
     def generate_reply(self, numero_crm: str, texto_cliente: str, nome_cliente: str) -> str:
-        provider = Config.get_active_provider()
-        if provider == "none":
-            return (
-                "Peco desculpa, o atendimento automatico ainda nao esta configurado. "
-                "A equipa da Negra Plena ira responder-lhe em breve."
-            )
-
         historico = self.memory.get_context(numero_crm)
         dados_negocio = self.catalog.get_context()
         system = Config.SYSTEM_PROMPT
@@ -35,25 +28,57 @@ class AIEngine:
             },
         ]
 
-        try:
-            if provider == "gemini":
-                resposta = self._call_gemini(system, mensagens[1]["content"])
-            elif provider == "local_llama":
-                from local_llm import LocalLlamaEngine
-                engine_local = LocalLlamaEngine.get_instance()
-                resposta = engine_local.generate(mensagens)
-            else:
-                resposta = self._call_openai_compatible(provider, mensagens)
+        # Nivel de Hierarquia (Fallback)
+        # 1. Llama Local (ZeroGPU) -> 2. OpenRouter -> 3. Groq -> 4. DeepSeek -> 5. Gemini
+        ordem_provedores = ["local_llama", "openrouter", "groq", "deepseek", "mistral", "gemini"]
+        
+        forced_provider = Config.AI_PROVIDER
+        if forced_provider and forced_provider != "auto":
+            # Se forcares um especifico, tenta-o primeiro, depois os outros
+            ordem_provedores = [forced_provider] + [p for p in ordem_provedores if p != forced_provider]
 
-            self.memory.add_message(numero_crm, "user", user_text)
-            self.memory.add_message(numero_crm, "model", resposta)
-            return resposta
-        except Exception as exc:
-            print(f"Erro no AIEngine ({provider}): {exc}")
+        resposta = None
+        erro_final = None
+
+        for provider in ordem_provedores:
+            try:
+                # Saltar provedores se a respectiva chave de seguranca nao existir
+                if provider == "openrouter" and not Config.OPENROUTER_API_KEY: continue
+                if provider == "groq" and not Config.GROQ_API_KEY: continue
+                if provider == "deepseek" and not Config.DEEPSEEK_API_KEY: continue
+                if provider == "mistral" and not Config.MISTRAL_API_KEY: continue
+                if provider == "gemini" and not Config.GEMINI_API_KEY: continue
+                
+                print(f"🔄 A tentar gerar resposta usando: {provider}...")
+                
+                if provider == "local_llama":
+                    from local_llm import LocalLlamaEngine
+                    engine_local = LocalLlamaEngine.get_instance()
+                    resposta = engine_local.generate(mensagens)
+                elif provider == "gemini":
+                    resposta = self._call_gemini(system, mensagens[1]["content"])
+                else:
+                    resposta = self._call_openai_compatible(provider, mensagens)
+                
+                if resposta:
+                    print(f"✅ Sucesso com {provider}!")
+                    break
+
+            except Exception as exc:
+                print(f"❌ Falha critica no provedor {provider}: {exc}")
+                erro_final = exc
+                continue # Se falhou, a hierarquia ignora o erro e avanca para o proximo!
+
+        if not resposta:
+            print(f"❌ TODOS os provedores da hierarquia falharam. Erro fatal: {erro_final}")
             return (
-                "Peco desculpa, estou com um problema tecnico neste momento. "
-                "Pode repetir daqui a instantes, por favor?"
+                "Peco desculpa, estou com uma instabilidade tecnica no sistema. "
+                "Pode repetir a sua mensagem daqui a instantes?"
             )
+
+        self.memory.add_message(numero_crm, "user", user_text)
+        self.memory.add_message(numero_crm, "model", resposta)
+        return resposta
 
     def _call_openai_compatible(self, provider: str, messages: list) -> str:
         url, headers = self._provider_endpoint(provider)
@@ -63,7 +88,7 @@ class AIEngine:
             "temperature": 0.4,
             "max_tokens": 450,
         }
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
+        response = requests.post(url, headers=headers, json=payload, timeout=25)
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
 
@@ -78,7 +103,7 @@ class AIEngine:
             "contents": [{"role": "user", "parts": [{"text": user_content}]}],
             "generationConfig": {"temperature": 0.4, "maxOutputTokens": 450},
         }
-        response = requests.post(url, json=payload, timeout=45)
+        response = requests.post(url, json=payload, timeout=25)
         response.raise_for_status()
         return response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
 
