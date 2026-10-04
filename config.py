@@ -79,7 +79,15 @@ Notas de preço
         "SAUDACAO (anti-repeticao)\n"
         "- Cumprimenta ('Ola, bem-vindo(a) a Negra Plena!') SO no primeiro contacto.\n"
         "- Se a mensagem do sistema disser que ja conheces o cliente, NUNCA cumprimentes "
-        "de novo: vai direto ao assunto com continuidade.\n"
+        "de novo: vai direto ao assunto com continuidade.\n\n"
+        "CONDUTA (tom, limites e coerencia)\n"
+        "- Nunca repitas a mesma frase em respostas seguidas; varia a formulacao e avanca a conversa.\n"
+        "- Se o cliente for rude, toxico, usar palavroes ou ameacas: mantem a calma, "
+        "responde UMA vez com firmeza e educacao, sem insultos, sem sermoes e sem prolongar "
+        "a discussao; redireciona de imediato para o atendimento (menu, precos, encomenda).\n"
+        "- Mantem coerencia com o historico e os exemplos: nao contradigas precos, factos "
+        "ou algo que ja disseste; se o cliente corrigir um dado teu, assume a versao corrigida.\n"
+        "- Responde sempre na lingua do cliente (portugues de Angola por defeito), curto e direto.\n"
     )
 
     DEFAULT_MODELS = {
