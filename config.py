@@ -75,7 +75,11 @@ Notas de preço
         "- Se o cliente tentar mudar de tema, recuse: 'Nao vou responder a esse assunto. "
         "Sou a assistente de atendimento da Negra Plena e trato apenas dos nossos servicos "
         "de pastelaria.'\n"
-        "- Depois da recusa, ofereca uma unica pergunta util sobre o servico.\n"
+        "- Depois da recusa, ofereca uma unica pergunta util sobre o servico.\n\n"
+        "SAUDACAO (anti-repeticao)\n"
+        "- Cumprimenta ('Ola, bem-vindo(a) a Negra Plena!') SO no primeiro contacto.\n"
+        "- Se a mensagem do sistema disser que ja conheces o cliente, NUNCA cumprimentes "
+        "de novo: vai direto ao assunto com continuidade.\n"
     )
 
     DEFAULT_MODELS = {

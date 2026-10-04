@@ -4,13 +4,15 @@ from config import Config
 from memory import MemoryManager
 from catalog import CatalogService
 from learning import LearningStore
+from profiles import ProfileStore
+
 
 class AIEngine:
     def __init__(self):
         self.memory = MemoryManager(max_history=8)
         self.catalog = CatalogService()
         self.learning = LearningStore()
-
+        self.profiles = ProfileStore()
     def generate_reply(self, numero_crm: str, texto_cliente: str, nome_cliente: str) -> str:
         resposta, _ = self._responder(numero_crm, texto_cliente, nome_cliente, registar=False)
         return resposta
@@ -32,6 +34,10 @@ class AIEngine:
         exemplos = self.learning.format_examples(user_text)
         if exemplos:
             system += f"\n\n{exemplos}"
+
+        perfil_txt = self.profiles.linha_contexto(numero_crm, nome_cliente)
+        if perfil_txt:
+            system += f"\n\n{perfil_txt}"
 
         user_text = texto_cliente.strip() or "(o cliente enviou uma mensagem sem texto)"
         mensagens = [
@@ -98,6 +104,7 @@ class AIEngine:
 
         self.memory.add_message(numero_crm, "user", user_text)
         self.memory.add_message(numero_crm, "model", resposta)
+        self.profiles.registar(numero_crm, nome_cliente, user_text)
         if registar:
             modelo = Config.LOCAL_MODEL_ID if provedor_ok == "local_llama" else Config.get_model(provedor_ok)
             self.learning.log_exchange(
