@@ -12,6 +12,9 @@ class EscutarPayload(BaseModel):
     grupo_id: Optional[str] = None
     mensagem_id: Optional[str] = None
     audio_base64: Optional[str] = None
+    fora_expediente: bool = Field(
+        default=False, description="True quando fora das 9h-18h (atendimento humano)"
+    )
 
 
 class EscutarResponse(BaseModel):

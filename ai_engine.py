@@ -17,12 +17,14 @@ class AIEngine:
         resposta, _ = self._responder(numero_crm, texto_cliente, nome_cliente, registar=False)
         return resposta
 
-    def responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str) -> tuple:
+    def responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str,
+                  fora_expediente: bool = False) -> tuple:
         """Igual a generate_reply mas regista a troca no aprendizado e devolve o id."""
-        return self._responder(numero_crm, texto_cliente, nome_cliente, registar=True)
+        return self._responder(numero_crm, texto_cliente, nome_cliente,
+                               registar=True, fora_expediente=fora_expediente)
 
     def _responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str,
-                   registar: bool) -> tuple:
+                   registar: bool, fora_expediente: bool = False) -> tuple:
         mensagem_id = uuid.uuid4().hex[:12]
         historico = self.memory.get_context(numero_crm)
         dados_negocio = self.catalog.get_context()
@@ -38,6 +40,15 @@ class AIEngine:
         perfil_txt = self.profiles.linha_contexto(numero_crm, nome_cliente)
         if perfil_txt:
             system += f"\n\n{perfil_txt}"
+
+        if fora_expediente:
+            system += (
+                "\n\nHORARIO: Agora está FORA do horário comercial "
+                "(humanos: dias úteis 9h–18h Luanda). Atende na mesma com clareza; "
+                "se pedirem atendimento humano, diz que a equipa responde a partir "
+                "das 9h e que deixas o pedido registado. Nunca prometas contacto "
+                "humano imediato fora de horas."
+            )
 
         user_text = texto_cliente.strip() or "(o cliente enviou uma mensagem sem texto)"
         mensagens = [
