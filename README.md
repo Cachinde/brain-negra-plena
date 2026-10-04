@@ -29,6 +29,18 @@ LoRA opcional via `LORA_ADAPTER_PATH`) é carregado uma vez e corre no `@spaces.
 se o download falhar (ex. repo gated sem licença + `HF_TOKEN`), cai para as APIs externas.
 Vars: `LOCAL_MODEL_ID`, `LORA_ADAPTER_PATH`, `HF_TOKEN`.
 
+### Download dos pesos (onde e como confirmar)
+
+- Os pesos **não** vão embutidos na imagem Docker (8B em bf16 ≈ 16GB).
+- No arranque, `app.py` faz o pré-aquecimento: baixa uma vez para o cache
+  do disco (`~/.cache/huggingface`) e os arranques seguintes reutilizam.
+- Confirme no log do container: `[llama] a carregar ...` → `[llama] modelo pronto.`
+  Se aparecer `[llama] indisponível (...)`, leia o motivo (ex. repo gated).
+- Modelo gated (ex. Meta Llama): aceite a licença na página do modelo no Hub
+  e defina o Secret `HF_TOKEN` com uma conta que tenha acesso. Sem isto,
+  o Llama fica inativo e o bot responde via APIs externas (Groq etc.).
+- Para pré-baixar na build Docker (opt-in), ver bloco comentado no `Dockerfile`.
+
 ## Aprendizado (v1, log local JSONL)
 
 - Cada resposta do `/escutar` é registada em `data/conversas.jsonl` e devolve um `mensagem_id`.

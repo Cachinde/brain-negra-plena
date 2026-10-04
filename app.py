@@ -68,5 +68,14 @@ try:
 except Exception as exc:
     print(f"[boot] lançamento interno do demo falhou: {exc!r}", flush=True)
 
+# Pré-aquecimento do Llama local: baixa os pesos UMA vez (depois usa o cache
+# do disco) para a primeira resposta não pagar o download. Falha silenciosa
+# com fallback para as APIs externas — nunca impede o arranque.
+try:
+    from local_llm import _ensure_loaded as _warm_llama
+    _warm_llama()
+except Exception as exc:
+    print(f"[boot] warmup Llama ignorado: {exc!r}", flush=True)
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")

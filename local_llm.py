@@ -13,6 +13,7 @@ Regras ZeroGPU respeitadas:
 import spaces  # tem de ser o primeiro import com CUDA por perto
 
 import os
+import threading
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -27,6 +28,7 @@ from config import Config
 _MODEL = None
 _TOKENIZER = None
 _LOAD_FAILED = ""
+_LOAD_LOCK = threading.Lock()
 
 
 def _ensure_loaded() -> bool:
@@ -35,6 +37,16 @@ def _ensure_loaded() -> bool:
         return True
     if _LOAD_FAILED:
         return False
+    with _LOAD_LOCK:
+        if _MODEL is not None:
+            return True
+        if _LOAD_FAILED:
+            return False
+        return _load_once()
+
+
+def _load_once() -> bool:
+    global _MODEL, _TOKENIZER, _LOAD_FAILED
     model_id = Config.LOCAL_MODEL_ID
     try:
         print(f"[llama] a carregar {model_id} ...", flush=True)
