@@ -90,10 +90,12 @@ def generate_local(messages: list) -> str:
     inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
     gen = _MODEL.generate(
         **inputs,
-        max_new_tokens=450,
+        max_new_tokens=280,
         temperature=0.4,
         top_p=0.9,
         do_sample=True,
+        repetition_penalty=1.15,
+        no_repeat_ngram_size=3,
         pad_token_id=_TOKENIZER.eos_token_id,
     )
     texto = _TOKENIZER.decode(
