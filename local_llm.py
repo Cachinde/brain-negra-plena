@@ -91,7 +91,7 @@ def generate_local(messages: list) -> str:
     gen = _MODEL.generate(
         **inputs,
         max_new_tokens=280,
-        temperature=0.4,
+        temperature=0.3,
         top_p=0.9,
         do_sample=True,
         repetition_penalty=1.15,
