@@ -10,7 +10,7 @@ COPY --chown=user . /app
 
 USER user
 ENV HOME=/home/user \
-    PATH=/home/user/.local/bin: \
+    PATH=/home/user/.local/bin:$PATH \
     PORT=7860
 
 EXPOSE 7860

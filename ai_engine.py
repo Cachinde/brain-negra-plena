@@ -1,19 +1,37 @@
 ﻿import requests
+import uuid
 from config import Config
 from memory import MemoryManager
 from catalog import CatalogService
+from learning import LearningStore
 
 class AIEngine:
     def __init__(self):
         self.memory = MemoryManager(max_history=8)
         self.catalog = CatalogService()
+        self.learning = LearningStore()
 
     def generate_reply(self, numero_crm: str, texto_cliente: str, nome_cliente: str) -> str:
+        resposta, _ = self._responder(numero_crm, texto_cliente, nome_cliente, registar=False)
+        return resposta
+
+    def responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str) -> tuple:
+        """Igual a generate_reply mas regista a troca no aprendizado e devolve o id."""
+        return self._responder(numero_crm, texto_cliente, nome_cliente, registar=True)
+
+    def _responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str,
+                   registar: bool) -> tuple:
+        mensagem_id = uuid.uuid4().hex[:12]
         historico = self.memory.get_context(numero_crm)
         dados_negocio = self.catalog.get_context()
         system = Config.SYSTEM_PROMPT
         if dados_negocio:
             system += f"\n\nDADOS ATUAIS DO NEGOCIO:\n{dados_negocio}"
+
+        user_text = texto_cliente.strip() or "(o cliente enviou uma mensagem sem texto)"
+        exemplos = self.learning.format_examples(user_text)
+        if exemplos:
+            system += f"\n\n{exemplos}"
 
         user_text = texto_cliente.strip() or "(o cliente enviou uma mensagem sem texto)"
         mensagens = [
@@ -39,6 +57,7 @@ class AIEngine:
 
         resposta = None
         erro_final = None
+        provedor_ok = ""
 
         for provider in ordem_provedores:
             try:
@@ -49,36 +68,44 @@ class AIEngine:
                 if provider == "mistral" and not Config.MISTRAL_API_KEY: continue
                 if provider == "gemini" and not Config.GEMINI_API_KEY: continue
                 
-                print(f"🔄 A tentar gerar resposta usando: {provider}...")
+                print(f"[hierarchy] A tentar gerar resposta usando: {provider}...", flush=True)
                 
                 if provider == "local_llama":
-                    from local_llm import LocalLlamaEngine
-                    engine_local = LocalLlamaEngine.get_instance()
-                    resposta = engine_local.generate(mensagens)
+                    from local_llm import generate_local
+                    resposta = generate_local(mensagens)
                 elif provider == "gemini":
                     resposta = self._call_gemini(system, mensagens[1]["content"])
                 else:
                     resposta = self._call_openai_compatible(provider, mensagens)
                 
                 if resposta:
-                    print(f"✅ Sucesso com {provider}!")
+                    print(f"[hierarchy] Sucesso com {provider}!", flush=True)
+                    provedor_ok = provider
                     break
 
             except Exception as exc:
-                print(f"❌ Falha critica no provedor {provider}: {exc}")
+                print(f"[hierarchy] Falha no provedor {provider}: {exc}", flush=True)
                 erro_final = exc
                 continue # Se falhou, a hierarquia ignora o erro e avanca para o proximo!
 
         if not resposta:
-            print(f"❌ TODOS os provedores da hierarquia falharam. Erro fatal: {erro_final}")
+            print(f"[hierarchy] TODOS os provedores falharam. Erro final: {erro_final}", flush=True)
             return (
                 "Peco desculpa, estou com uma instabilidade tecnica no sistema. "
-                "Pode repetir a sua mensagem daqui a instantes?"
+                "Pode repetir a sua mensagem daqui a instantes?",
+                mensagem_id,
             )
 
         self.memory.add_message(numero_crm, "user", user_text)
         self.memory.add_message(numero_crm, "model", resposta)
-        return resposta
+        if registar:
+            modelo = Config.LOCAL_MODEL_ID if provedor_ok == "local_llama" else Config.get_model(provedor_ok)
+            self.learning.log_exchange(
+                numero_crm, user_text, resposta,
+                provedor=provedor_ok, modelo=modelo,
+                mensagem_id=mensagem_id,
+            )
+        return resposta, mensagem_id
 
     def _call_openai_compatible(self, provider: str, messages: list) -> str:
         url, headers = self._provider_endpoint(provider)
