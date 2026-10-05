@@ -5,7 +5,7 @@ from config import Config
 from memory import MemoryManager
 from catalog import CatalogService
 from learning import LearningStore
-from profiles import ProfileStore
+from profiles import ProfileStore, detetar_emocao
 
 
 _SAUDACAO_INICIAL = re.compile(
@@ -99,6 +99,13 @@ class AIEngine:
         perfil_txt = self.profiles.linha_contexto(numero_crm, nome_cliente)
         if perfil_txt:
             system += f"\n\n{perfil_txt}"
+
+        emocao_agora = detetar_emocao(user_text)
+        if emocao_agora != "neutro":
+            system += (
+                f"\n\nEMOÇÃO AGORA: o cliente parece {emocao_agora} nesta mensagem. "
+                f"Age segundo o bloco EMOÇÃO do prompt."
+            )
 
         if fora_expediente:
             system += (

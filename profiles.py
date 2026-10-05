@@ -35,6 +35,46 @@ _ASSUNTOS = [
     }),
 ]
 
+# Emoções por palavras-chave (heurística leve, sem dependências).
+# Ordem importa: a primeira com match ganha.
+_EMOCOES = [
+    ("zangado", {
+        "burro", "burra", "idiota", "estupido", "estupida", "odeio",
+        "merda", "porra", "caralho", "lixo", "horrivel", "pessimo",
+        "pessima", "reclamar", "reclamacao", "incompetente", "irritado",
+        "irritada", "raiva", "fdp", "cabr", "otario", "imbecil",
+    }),
+    ("triste", {
+        "triste", "lamento", "desapontado", "desapontada", "chateado",
+        "chateada", "chorar", "saudade", "sozinho", "sozinha",
+    }),
+    ("ansioso", {
+        "urgente", "rapido", "depressa", "ansioso", "ansiosa",
+        "preocupado", "preocupada", "aflito", "demora", "atrasado",
+    }),
+    ("contente", {
+        "obrigado", "obrigada", "adorei", "fixe", "otimo", "otima",
+        "excelente", "parabens", "gostei", "amei", "top", "maravilha",
+    }),
+    ("confuso", {
+        "nao entendo", "nao entendes", "nao percebo", "confuso",
+        "confusa", "como assim", "nao consigo", "perdido", "perdida",
+    }),
+]
+
+
+def detetar_emocao(texto: str) -> str:
+    """Devolve zangado|triste|ansioso|contente|confuso|neutro."""
+    base = unicodedata.normalize("NFKD", texto or "").encode(
+        "ascii", "ignore").decode().lower()
+    base = " {} ".format(re.sub(r"[^a-z ]", " ", base))
+    base = re.sub(r"\s+", " ", base)
+    for emocao, chaves in _EMOCOES:
+        for chave in chaves:
+            if f" {chave} " in base:
+                return emocao
+    return "neutro"
+
 
 def _toks(texto: str) -> set:
     base = unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode()
@@ -94,11 +134,15 @@ class ProfileStore:
             return ""
         quem = perfil.get("nome") or (nome or "").strip() or "cliente sem nome registado"
         assunto = perfil.get("ultimo_assunto") or "outro"
-        return (
+        linha = (
             f"Conheces este cliente ({quem}): já trocaram {n} mensagem(ns) antes; "
             f"último assunto: {assunto}. NÃO cumprimentes de novo — "
             f"vai direto ao assunto com continuidade."
         )
+        emocao = perfil.get("ultima_emocao") or "neutro"
+        if emocao != "neutro":
+            linha += f" Estado emocional provável agora: {emocao}."
+        return linha
 
     def registar(self, cliente: str, nome: str = "", pergunta: str = "") -> dict:
         chave = cliente or "unknown"
@@ -114,6 +158,7 @@ class ProfileStore:
             perfil["n_trocas"] = int(perfil.get("n_trocas", 0) or 0) + 1
             if pergunta:
                 perfil["ultimo_assunto"] = classificar_assunto(pergunta)
+                perfil["ultima_emocao"] = detetar_emocao(pergunta)
             dados[chave] = perfil
             self._guardar(dados)
             return dict(perfil)
