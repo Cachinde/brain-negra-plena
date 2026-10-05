@@ -60,15 +60,23 @@ def _load_once() -> bool:
         )
         # Uma vez no processo principal; o hijack do spaces gere o resto.
         mdl.to("cuda")
-        lora = Config.LORA_ADAPTER_PATH
+        lora = (Config.LORA_ADAPTER_PATH or "").strip()
         if lora:
-            if not os.path.exists(lora):
-                print(f"[llama] LORA_ADAPTER_PATH inexistente ({lora}); a ignorar.", flush=True)
-            elif PeftModel is None:
+            if PeftModel is None:
                 raise RuntimeError("peft não instalado; não consigo aplicar o adaptador LoRA")
-            else:
-                print(f"[llama] a aplicar LoRA de: {lora} ...", flush=True)
-                mdl = PeftModel.from_pretrained(mdl, lora)
+            # Caminho local OU id do Hub (ex. "user/meu-lora"):
+            # o Hub faz download automático para o cache.
+            modo = "pasta local" if os.path.exists(lora) else "Hub (download)"
+            print(f"[llama] a aplicar LoRA de: {lora} [{modo}] ...", flush=True)
+            mdl = PeftModel.from_pretrained(mdl, lora)
+            ativos = []
+            try:
+                ativos = list(getattr(mdl, "active_adapters", []) or [])
+            except Exception:
+                pass
+            print(f"[llama] LoRA aplicado. Adaptadores ativos: {ativos or '?'}", flush=True)
+        else:
+            print("[llama] sem adaptador LoRA (LORA_ADAPTER_PATH vazio).", flush=True)
         mdl.eval()
         _MODEL, _TOKENIZER = mdl, tok
         print("[llama] modelo pronto.", flush=True)

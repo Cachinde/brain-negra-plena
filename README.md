@@ -25,7 +25,9 @@ A anotação @spaces.GPU está configurada para suportar inferência rápida.
 1. Llama local (ZeroGPU) → 2. OpenRouter → 3. Groq → 4. DeepSeek → 5. Mistral → 6. Gemini.
 Cada nível que falha cai para o seguinte; `AI_PROVIDER` força um específico primeiro.
 O Llama local (`local_llm.py`, `NousResearch/Meta-Llama-3-8B-Instruct` por defeito,
-LoRA opcional via `LORA_ADAPTER_PATH`) é carregado uma vez e corre no `@spaces.GPU`;
+LoRA opcional via `LORA_ADAPTER_PATH` — pasta local ou id do Hub, ex. `user/meu-lora`,
+com download automático e confirmação de adaptadores ativos no log) é carregado
+uma vez e corre no `@spaces.GPU`;
 se o download falhar (ex. repo gated sem licença + `HF_TOKEN`), cai para as APIs externas.
 Vars: `LOCAL_MODEL_ID`, `LORA_ADAPTER_PATH`, `HF_TOKEN`.
 
