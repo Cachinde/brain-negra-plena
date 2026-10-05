@@ -208,7 +208,8 @@ class AIEngine:
                 continue # Se falhou, a hierarquia ignora o erro e avanca para o proximo!
 
         if not resposta:
-            print(f"[hierarchy] TODOS os provedores falharam. Erro final: {erro_final}", flush=True)
+            print(f"[hierarchy] TODOS os provedores falharam. "
+                  f"Erro final: {limpar_segredo(str(erro_final))}", flush=True)
             return (
                 "Peco desculpa, estou com uma instabilidade tecnica no sistema. "
                 "Pode repetir a sua mensagem daqui a instantes?",
