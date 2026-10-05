@@ -163,7 +163,7 @@ class AIEngine:
 
         # Nivel de Hierarquia (Fallback)
         # 1. Llama Local (ZeroGPU) -> 2. OpenRouter -> 3. Groq -> 4. DeepSeek -> 5. Gemini
-        ordem_provedores = ["local_llama", "openrouter", "groq", "deepseek", "mistral", "gemini"]
+        ordem_provedores = ["local_llama", "cerebras", "openrouter", "groq", "deepseek", "mistral", "gemini"]
         
         forced_provider = Config.AI_PROVIDER
         if forced_provider and forced_provider != "auto":
@@ -179,6 +179,7 @@ class AIEngine:
                 # Saltar provedores se a respectiva chave de seguranca nao existir
                 if provider == "openrouter" and not Config.OPENROUTER_API_KEY: continue
                 if provider == "groq" and not Config.GROQ_API_KEY: continue
+                if provider == "cerebras" and not Config.CEREBRAS_API_KEY: continue
                 if provider == "deepseek" and not Config.DEEPSEEK_API_KEY: continue
                 if provider == "mistral" and not Config.MISTRAL_API_KEY: continue
                 if provider == "gemini" and not Config.GEMINI_API_KEY: continue
@@ -271,6 +272,11 @@ class AIEngine:
         if provider == "groq":
             return "https://api.groq.com/openai/v1/chat/completions", {
                 "Authorization": f"Bearer {Config.GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            }
+        if provider == "cerebras":
+            return "https://api.cerebras.ai/v1/chat/completions", {
+                "Authorization": f"Bearer {Config.CEREBRAS_API_KEY}",
                 "Content-Type": "application/json",
             }
         if provider == "deepseek":

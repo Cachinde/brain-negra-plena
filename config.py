@@ -12,6 +12,7 @@ class Config:
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "").strip()
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+    CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "").strip()
 
     API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN", "").strip()
 
@@ -134,6 +135,7 @@ Notas de preço
         "deepseek": "deepseek-chat",
         "mistral": "mistral-small-latest",
         "groq": "llama-3.3-70b-versatile",
+        "cerebras": "llama-3.3-70b",
         "gemini": "gemini-2.0-flash",
     }
 
@@ -145,6 +147,8 @@ Notas de preço
             return "openrouter"
         if cls.GROQ_API_KEY:
             return "groq"
+        if cls.CEREBRAS_API_KEY:
+            return "cerebras"
         if cls.DEEPSEEK_API_KEY:
             return "deepseek"
         if cls.MISTRAL_API_KEY:
