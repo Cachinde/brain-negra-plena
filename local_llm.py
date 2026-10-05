@@ -87,7 +87,7 @@ def _load_once() -> bool:
         return False
 
 
-@spaces.GPU(duration=180)
+@spaces.GPU(duration=90)
 def generate_local(messages: list) -> str:
     """Gera resposta com o Llama local. Falha rápido se o modelo não carregou."""
     if not _ensure_loaded():

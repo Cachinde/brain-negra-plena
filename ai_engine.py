@@ -13,6 +13,24 @@ _SAUDACAO_INICIAL = re.compile(
     re.IGNORECASE,
 )
 
+# Chaves nunca no log (o Space imprime tracebacks; URLs trazem ?key=...).
+_PADROES_SEGREDO = [
+    (re.compile(r"key=[^&\s'\"]+"), "key=***"),
+    (re.compile(r"Bearer\s+\S+"), "Bearer ***"),
+    (re.compile(r"\b(sk-[A-Za-z0-9\-_]{8,}|gsk_[A-Za-z0-9\-_]{8,})"), "***"),
+]
+
+
+def limpar_segredo(texto: str) -> str:
+    """Redige segredos (chaves em URLs, Bearers) antes de ir para o log."""
+    limpo = texto or ""
+    try:
+        for rx, rep in _PADROES_SEGREDO:
+            limpo = rx.sub(rep, limpo)
+    except Exception:
+        return "***"
+    return limpo
+
 
 def tirar_saudacao(resposta: str, nome: str = "") -> str:
     """Corta saudação inicial repetida ('Olá Isaac! ...', 'Isaac! ...').
@@ -163,7 +181,11 @@ class AIEngine:
                     break
 
             except Exception as exc:
-                print(f"[hierarchy] Falha no provedor {provider}: {exc}", flush=True)
+                detalhe = limpar_segredo(str(exc))
+                print(f"[hierarchy] Falha no provedor {provider}: {detalhe}", flush=True)
+                if any(s in str(exc) for s in ("401", "403", "Unauthorized", "API key")):
+                    print(f"[hierarchy] DICA: {provider} rejeitou a chave — "
+                          f"confira o Secret correspondente no Space.", flush=True)
                 erro_final = exc
                 continue # Se falhou, a hierarquia ignora o erro e avanca para o proximo!
 
