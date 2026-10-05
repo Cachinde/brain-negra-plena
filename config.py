@@ -161,4 +161,11 @@ Notas de preço
 
     @classmethod
     def get_model(cls, provider: str) -> str:
-        return cls.AI_MODEL or cls.DEFAULT_MODELS.get(provider, "")
+        if cls.AI_MODEL:
+            if provider == "openrouter":
+                return cls.AI_MODEL
+            # IDs estilo OpenRouter ("org/modelo...") só valem no openrouter;
+            # nos outros provedores dariam 400/404 — usam o modelo por defeito.
+            if "/" not in cls.AI_MODEL:
+                return cls.AI_MODEL
+        return cls.DEFAULT_MODELS.get(provider, "")

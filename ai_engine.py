@@ -187,8 +187,14 @@ class AIEngine:
                 print(f"[hierarchy] A tentar gerar resposta usando: {provider}...", flush=True)
                 
                 if provider == "local_llama":
-                    from local_llm import generate_local
-                    resposta = generate_local(mensagens)
+                    from local_llm import em_pausa, generate_local, registar_quota
+                    if em_pausa():
+                        raise RuntimeError("local em pausa por quota (reset pendente)")
+                    try:
+                        resposta = generate_local(mensagens)
+                    except Exception as exc_local:
+                        registar_quota(str(exc_local))
+                        raise
                 elif provider == "gemini":
                     resposta = self._call_gemini(system, texto_corrido)
                 else:
@@ -244,7 +250,14 @@ class AIEngine:
         }
         response = requests.post(url, headers=headers, json=payload, timeout=25)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
+        try:
+            texto = response.json()["choices"][0]["message"].get("content") or ""
+        except (KeyError, IndexError, TypeError, AttributeError):
+            texto = ""
+        texto = texto.strip()
+        if not texto:
+            raise ValueError(f"resposta vazia de {provider}")
+        return texto
 
     def _call_gemini(self, system: str, user_content: str) -> str:
         model = Config.get_model("gemini")
@@ -259,7 +272,14 @@ class AIEngine:
         }
         response = requests.post(url, json=payload, timeout=25)
         response.raise_for_status()
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        try:
+            texto = response.json()["candidates"][0]["content"]["parts"][0]["text"] or ""
+        except (KeyError, IndexError, TypeError, AttributeError):
+            texto = ""
+        texto = texto.strip()
+        if not texto:
+            raise ValueError("resposta vazia de gemini")
+        return texto
 
     def _provider_endpoint(self, provider: str):
         if provider == "openrouter":

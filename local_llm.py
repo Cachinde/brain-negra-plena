@@ -43,6 +43,20 @@ def _segundos_quota(msg: str) -> int:
     return h * 3600 + mi * 60 + s
 
 
+def em_pausa() -> bool:
+    """True se a quota mandou esperar (evita chamar o scheduler à toa)."""
+    return time.time() < _QUOTA_ATE
+
+
+def registar_quota(msg: str) -> None:
+    """Regista pausa a partir da mensagem de erro do scheduler."""
+    global _QUOTA_ATE
+    texto = msg or ""
+    if "quota" in texto.lower() or "exceeded" in texto.lower():
+        _QUOTA_ATE = time.time() + _segundos_quota(texto)
+        print("[llama] quota esgotada; local em pausa. Fallback imediato.", flush=True)
+
+
 def _ensure_loaded() -> bool:
     global _MODEL, _TOKENIZER, _LOAD_FAILED
     if _MODEL is not None:
