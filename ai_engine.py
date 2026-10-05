@@ -110,17 +110,13 @@ class AIEngine:
             )
 
         user_text = texto_cliente.strip() or "(o cliente enviou uma mensagem sem texto)"
-        mensagens = [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": (
-                    f"{historico}\n\nO cliente {nome_cliente} ({numero_crm}) diz: {user_text}"
-                    if historico
-                    else f"O cliente {nome_cliente} ({numero_crm}) diz: {user_text}"
-                ),
-            },
-        ]
+        atual = f"O cliente {nome_cliente} ({numero_crm}) diz: {user_text}"
+        # Turnos reais (melhor coerência que histórico colado num turno só).
+        mensagens = [{"role": "system", "content": system}]
+        mensagens += self.memory.get_turns(numero_crm)
+        mensagens.append({"role": "user", "content": atual})
+        # Versão corrida só para o caminho Gemini (1 turno de utilizador).
+        texto_corrido = f"{historico}\n\n{atual}" if historico else atual
 
         # Nivel de Hierarquia (Fallback)
         # 1. Llama Local (ZeroGPU) -> 2. OpenRouter -> 3. Groq -> 4. DeepSeek -> 5. Gemini
@@ -150,7 +146,7 @@ class AIEngine:
                     from local_llm import generate_local
                     resposta = generate_local(mensagens)
                 elif provider == "gemini":
-                    resposta = self._call_gemini(system, mensagens[1]["content"])
+                    resposta = self._call_gemini(system, texto_corrido)
                 else:
                     resposta = self._call_openai_compatible(provider, mensagens)
                 
