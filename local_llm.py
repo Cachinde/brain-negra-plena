@@ -13,7 +13,9 @@ Regras ZeroGPU respeitadas:
 import spaces  # tem de ser o primeiro import com CUDA por perto
 
 import os
+import re
 import threading
+import time
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -29,6 +31,16 @@ _MODEL = None
 _TOKENIZER = None
 _LOAD_FAILED = ""
 _LOAD_LOCK = threading.Lock()
+_QUOTA_ATE = 0.0
+
+
+def _segundos_quota(msg: str) -> int:
+    """Extrai 'Try again in H:MM:SS' da mensagem de quota; 1h se ausente."""
+    m = re.search(r"Try again in (\d+):(\d+):(\d+)", msg or "")
+    if not m:
+        return 3600
+    h, mi, s = map(int, m.groups())
+    return h * 3600 + mi * 60 + s
 
 
 def _ensure_loaded() -> bool:
@@ -90,8 +102,24 @@ def _load_once() -> bool:
 @spaces.GPU(duration=90)
 def generate_local(messages: list) -> str:
     """Gera resposta com o Llama local. Falha rápido se o modelo não carregou."""
+    global _QUOTA_ATE
+    if time.time() < _QUOTA_ATE:
+        raise RuntimeError("quota ZeroGPU em pausa (reset pendente)")
     if not _ensure_loaded():
         raise RuntimeError(f"Llama local indisponível: {_LOAD_FAILED}")
+    try:
+        return _gerar(messages)
+    except Exception as exc:
+        msg = str(exc)
+        if "quota" in msg.lower() or "exceeded" in msg.lower():
+            espera = _segundos_quota(msg)
+            _QUOTA_ATE = time.time() + espera
+            print(f"[llama] quota esgotada; local em pausa ~{espera}s. "
+                  f"Fallback imediato até lá.", flush=True)
+        raise
+
+
+def _gerar(messages: list) -> str:
     prompt = _TOKENIZER.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )

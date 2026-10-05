@@ -27,6 +27,8 @@ Cada nível que falha cai para o seguinte; `AI_PROVIDER` força um específico p
 Provedores sem chave são saltados. Cerebras tem free tier generoso (1M tokens/dia,
 sem cartão; contexto 8K no free): cria a chave em cloud.cerebras.ai e define
 `CEREBRAS_API_KEY`. Modelos OpenRouter com `:free` também valem como degrau gratuito.
+Quota ZeroGPU esgotada? O local entra em pausa até ao reset (lê o "Try again in"
+do erro) e o fallback fica imediato — sem esperar o scheduler recusar.
 O Llama local (`local_llm.py`, `NousResearch/Meta-Llama-3-8B-Instruct` por defeito,
 LoRA opcional via `LORA_ADAPTER_PATH` — pasta local ou id do Hub, ex. `user/meu-lora`,
 com download automático e confirmação de adaptadores ativos no log) é carregado
