@@ -51,13 +51,29 @@ def tirar_saudacao(resposta: str, nome: str = "") -> str:
     return texto if texto else (resposta or "").strip()
 
 
-# Corrupções observadas no Llama-8B -> forma correcta.
+# Marca e assistente: qualquer par parecido vira a forma correcta,
+# menos a forma correcta (guardas). Cobre variantes ainda não vistas.
+_MARCA = re.compile(r"\bNeg[a-z]{1,6}\s+[Pp][a-z]{2,6}\b", re.IGNORECASE)
+_BOTNOME = re.compile(r"\bPlen[a-z]{4,7}\b", re.IGNORECASE)
+
+
+def _fix_marca(m):
+    a, b = m.group(0).split()
+    if a.lower() == "negra" and b.lower() == "plena":
+        return m.group(0)
+    return "Negra Plena"
+
+
+def _fix_botnome(m):
+    w = m.group(0)
+    if w.lower() == "plenitude":
+        return w
+    return "Plenitude"
+
+
+# Outras corrupções observadas no Llama-8B -> forma correcta.
 # Lista fechada (só o que já apareceu nos logs); ordem importa.
 _CORRECOES = [
-    (r"\bNeg(?:re|rela|rega|reira|ral)\s+Plena\b"
-     r"|\bNegra\s+(?:Pena|Piena)\b"
-     r"|\bNegral\s+(?:Piena|Pi[ñn]a)\b", "Negra Plena"),
-    (r"\bPlentude\b|\bPlenuidade\b", "Plenitude"),
     (r"\bservicios\b", "serviços"),
     (r"\bpasteleira\b|\bpasteleria\b", "pastelaria"),
     (r"\bmás\b", "mais"),
@@ -79,6 +95,8 @@ _CORRECOES_RX = [(re.compile(pat, re.IGNORECASE), rep) for pat, rep in _CORRECOE
 def sanitizar(resposta: str) -> str:
     """Corrige corrupções conhecidas do 8B (nomes, idioma, produtos)."""
     texto = resposta or ""
+    texto = _MARCA.sub(_fix_marca, texto)
+    texto = _BOTNOME.sub(_fix_botnome, texto)
     for rx, rep in _CORRECOES_RX:
         texto = rx.sub(rep, texto)
     return texto.strip() or (resposta or "").strip()
