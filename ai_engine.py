@@ -14,10 +14,56 @@ _SAUDACAO_INICIAL = re.compile(
 )
 
 
-def tirar_saudacao(resposta: str) -> str:
-    """Corta saudação inicial repetida ('Olá Isaac! ...'). Nunca devolve vazio."""
-    cortada = _SAUDACAO_INICIAL.sub("", resposta or "", count=1).lstrip()
-    return cortada if cortada else (resposta or "").strip()
+def tirar_saudacao(resposta: str, nome: str = "") -> str:
+    """Corta saudação inicial repetida ('Olá Isaac! ...', 'Isaac! ...').
+
+    O nome próprio só é cortado quando é o cliente conhecido.
+    Nunca devolve vazio.
+    """
+    texto = _SAUDACAO_INICIAL.sub("", resposta or "", count=1).lstrip()
+    nome_limpo = (nome or "").strip()
+    if nome_limpo:
+        variantes = {nome_limpo, nome_limpo.split()[0]}
+        for variante in sorted(variantes, key=len, reverse=True):
+            if len(variante) >= 3:
+                texto = re.sub(
+                    r"^\s*" + re.escape(variante) + r"\s*[!,]\s*",
+                    "", texto, count=1, flags=re.IGNORECASE,
+                ).lstrip()
+    return texto if texto else (resposta or "").strip()
+
+
+# Corrupções observadas no Llama-8B -> forma correcta.
+# Lista fechada (só o que já apareceu nos logs); ordem importa.
+_CORRECOES = [
+    (r"\bNeg(?:re|rela|rega|reira|ral)\s+Plena\b"
+     r"|\bNegra\s+(?:Pena|Piena)\b"
+     r"|\bNegral\s+(?:Piena|Pi[ñn]a)\b", "Negra Plena"),
+    (r"\bPlentude\b|\bPlenuidade\b", "Plenitude"),
+    (r"\bservicios\b", "serviços"),
+    (r"\bpasteleira\b|\bpasteleria\b", "pastelaria"),
+    (r"\bmás\b", "mais"),
+    (r"\batenci[oó]n\b", "atenção"),
+    (r"\bsimplicit[eé]\b", "simplicidade"),
+    (r"\bangolanenses\b", "angolanos"),
+    (r"\bangolanense\b", "angolana"),
+    (r"\bEnroladinh[oó]s\b", "enroladinhos"),
+    (r"\bchourisos\b", "chouriços"),
+    (r"\bchouriso\b", "chouriço"),
+    (r"\bBolhas\s+de\s+Berl(?:im|in)\b", "Bolas de Berlim"),
+    (r"\bRiss[oó]i\b", "rissóis"),
+    (r"\bsaudos\b", "salgados"),
+    (r"\bBerlin\b", "Berlim"),
+]
+_CORRECOES_RX = [(re.compile(pat, re.IGNORECASE), rep) for pat, rep in _CORRECOES]
+
+
+def sanitizar(resposta: str) -> str:
+    """Corrige corrupções conhecidas do 8B (nomes, idioma, produtos)."""
+    texto = resposta or ""
+    for rx, rep in _CORRECOES_RX:
+        texto = rx.sub(rep, texto)
+    return texto.strip() or (resposta or "").strip()
 
 
 class AIEngine:
@@ -128,7 +174,8 @@ class AIEngine:
 
         era_conhecido = int(self.profiles.obter(numero_crm).get("n_trocas", 0) or 0) > 0
         if era_conhecido:
-            resposta = tirar_saudacao(resposta)
+            resposta = tirar_saudacao(resposta, nome_cliente)
+        resposta = sanitizar(resposta)
 
         self.memory.add_message(numero_crm, "user", user_text)
         self.memory.add_message(numero_crm, "model", resposta)
