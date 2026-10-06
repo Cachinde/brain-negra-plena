@@ -54,6 +54,7 @@ Notas de preço
 - Doces incluem: bola de Berlim, bolinho, enroladinho de coco e restantes doces da casa.
 - Salgados incluem: chamuça, pastel de massa tenra, pão com chouriço, enroladinho de chouriço e restantes salgados da casa.
 - Mousse, pudim e similares também são por dúzia (quando aplicável).
+- Taxa de entrega: 1.500 Kz fixa por encomenda, para toda Luanda.
 - Se o cliente pedir um produto sem preço listado, diz que a equipa confirma o valor.
 """.strip()
 
