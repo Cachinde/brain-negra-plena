@@ -4,7 +4,7 @@ emoji: 🧁
 colorFrom: purple
 colorTo: pink
 sdk: gradio
-sdk_version: "5.6.0"
+sdk_version: 6.29.1
 python_version: "3.12"
 app_file: app.py
 pinned: false
@@ -22,10 +22,17 @@ A anotação @spaces.GPU está configurada para suportar inferência rápida.
 
 ## Hierarquia de provedores (fallback)
 
-1. Llama local (ZeroGPU) → 2. OpenRouter → 3. Groq → 4. DeepSeek → 5. Mistral → 6. Gemini.
+1. Llama local (ZeroGPU) → 2. Cerebras → 3. OpenRouter → 4. Groq → 5. DeepSeek → 6. Mistral → 7. Gemini.
 Cada nível que falha cai para o seguinte; `AI_PROVIDER` força um específico primeiro.
+Provedores sem chave são saltados. Cerebras tem free tier generoso (1M tokens/dia,
+sem cartão; contexto 8K no free): cria a chave em cloud.cerebras.ai e define
+`CEREBRAS_API_KEY`. Modelos OpenRouter com `:free` também valem como degrau gratuito.
+Quota ZeroGPU esgotada? O local entra em pausa até ao reset (lê o "Try again in"
+do erro) e o fallback fica imediato — sem esperar o scheduler recusar.
 O Llama local (`local_llm.py`, `NousResearch/Meta-Llama-3-8B-Instruct` por defeito,
-LoRA opcional via `LORA_ADAPTER_PATH`) é carregado uma vez e corre no `@spaces.GPU`;
+LoRA opcional via `LORA_ADAPTER_PATH` — pasta local ou id do Hub, ex. `user/meu-lora`,
+com download automático e confirmação de adaptadores ativos no log) é carregado
+uma vez e corre no `@spaces.GPU`;
 se o download falhar (ex. repo gated sem licença + `HF_TOKEN`), cai para as APIs externas.
 Vars: `LOCAL_MODEL_ID`, `LORA_ADAPTER_PATH`, `HF_TOKEN`.
 

@@ -13,7 +13,9 @@ Regras ZeroGPU respeitadas:
 import spaces  # tem de ser o primeiro import com CUDA por perto
 
 import os
+import re
 import threading
+import time
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -29,6 +31,30 @@ _MODEL = None
 _TOKENIZER = None
 _LOAD_FAILED = ""
 _LOAD_LOCK = threading.Lock()
+_QUOTA_ATE = 0.0
+
+
+def _segundos_quota(msg: str) -> int:
+    """Extrai 'Try again in H:MM:SS' da mensagem de quota; 1h se ausente."""
+    m = re.search(r"Try again in (\d+):(\d+):(\d+)", msg or "")
+    if not m:
+        return 3600
+    h, mi, s = map(int, m.groups())
+    return h * 3600 + mi * 60 + s
+
+
+def em_pausa() -> bool:
+    """True se a quota mandou esperar (evita chamar o scheduler à toa)."""
+    return time.time() < _QUOTA_ATE
+
+
+def registar_quota(msg: str) -> None:
+    """Regista pausa a partir da mensagem de erro do scheduler."""
+    global _QUOTA_ATE
+    texto = msg or ""
+    if "quota" in texto.lower() or "exceeded" in texto.lower():
+        _QUOTA_ATE = time.time() + _segundos_quota(texto)
+        print("[llama] quota esgotada; local em pausa. Fallback imediato.", flush=True)
 
 
 def _ensure_loaded() -> bool:
@@ -60,15 +86,23 @@ def _load_once() -> bool:
         )
         # Uma vez no processo principal; o hijack do spaces gere o resto.
         mdl.to("cuda")
-        lora = Config.LORA_ADAPTER_PATH
+        lora = (Config.LORA_ADAPTER_PATH or "").strip()
         if lora:
-            if not os.path.exists(lora):
-                print(f"[llama] LORA_ADAPTER_PATH inexistente ({lora}); a ignorar.", flush=True)
-            elif PeftModel is None:
+            if PeftModel is None:
                 raise RuntimeError("peft não instalado; não consigo aplicar o adaptador LoRA")
-            else:
-                print(f"[llama] a aplicar LoRA de: {lora} ...", flush=True)
-                mdl = PeftModel.from_pretrained(mdl, lora)
+            # Caminho local OU id do Hub (ex. "user/meu-lora"):
+            # o Hub faz download automático para o cache.
+            modo = "pasta local" if os.path.exists(lora) else "Hub (download)"
+            print(f"[llama] a aplicar LoRA de: {lora} [{modo}] ...", flush=True)
+            mdl = PeftModel.from_pretrained(mdl, lora)
+            ativos = []
+            try:
+                ativos = list(getattr(mdl, "active_adapters", []) or [])
+            except Exception:
+                pass
+            print(f"[llama] LoRA aplicado. Adaptadores ativos: {ativos or '?'}", flush=True)
+        else:
+            print("[llama] sem adaptador LoRA (LORA_ADAPTER_PATH vazio).", flush=True)
         mdl.eval()
         _MODEL, _TOKENIZER = mdl, tok
         print("[llama] modelo pronto.", flush=True)
@@ -79,21 +113,39 @@ def _load_once() -> bool:
         return False
 
 
-@spaces.GPU(duration=180)
+@spaces.GPU(duration=90)
 def generate_local(messages: list) -> str:
     """Gera resposta com o Llama local. Falha rápido se o modelo não carregou."""
+    global _QUOTA_ATE
+    if time.time() < _QUOTA_ATE:
+        raise RuntimeError("quota ZeroGPU em pausa (reset pendente)")
     if not _ensure_loaded():
         raise RuntimeError(f"Llama local indisponível: {_LOAD_FAILED}")
+    try:
+        return _gerar(messages)
+    except Exception as exc:
+        msg = str(exc)
+        if "quota" in msg.lower() or "exceeded" in msg.lower():
+            espera = _segundos_quota(msg)
+            _QUOTA_ATE = time.time() + espera
+            print(f"[llama] quota esgotada; local em pausa ~{espera}s. "
+                  f"Fallback imediato até lá.", flush=True)
+        raise
+
+
+def _gerar(messages: list) -> str:
     prompt = _TOKENIZER.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
     inputs = _TOKENIZER(prompt, return_tensors="pt").to("cuda")
     gen = _MODEL.generate(
         **inputs,
-        max_new_tokens=450,
-        temperature=0.4,
+        max_new_tokens=280,
+        temperature=0.3,
         top_p=0.9,
         do_sample=True,
+        repetition_penalty=1.15,
+        no_repeat_ngram_size=3,
         pad_token_id=_TOKENIZER.eos_token_id,
     )
     texto = _TOKENIZER.decode(

@@ -68,7 +68,10 @@ def escutar(payload: EscutarPayload, _: None = Depends(require_token)):
     if not texto and payload.audio_base64:
         texto = "(o cliente enviou um audio; transcricao na GPU ainda em preparacao)"
 
-    resposta, mensagem_id = engine.responder(cliente, texto, payload.nome or "Cliente")
+    resposta, mensagem_id = engine.responder(
+        cliente, texto, payload.nome or "Cliente",
+        fora_expediente=payload.fora_expediente,
+    )
     return EscutarResponse(texto=resposta, mensagem_id=mensagem_id)
 
 

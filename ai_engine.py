@@ -1,26 +1,125 @@
 ﻿import requests
+import re
 import uuid
 from config import Config
 from memory import MemoryManager
 from catalog import CatalogService
 from learning import LearningStore
+from profiles import ProfileStore, detetar_emocao
+
+
+_SAUDACAO_INICIAL = re.compile(
+    r"^\s*(ol[aá]|oi|bom dia|boa tarde|boa noite)\b[^,;:.!?…\n]*[,;:.!?…]?\s*",
+    re.IGNORECASE,
+)
+
+# Chaves nunca no log (o Space imprime tracebacks; URLs trazem ?key=...).
+_PADROES_SEGREDO = [
+    (re.compile(r"key=[^&\s'\"]+"), "key=***"),
+    (re.compile(r"Bearer\s+\S+"), "Bearer ***"),
+    (re.compile(r"\b(sk-[A-Za-z0-9\-_]{8,}|gsk_[A-Za-z0-9\-_]{8,})"), "***"),
+]
+
+
+def limpar_segredo(texto: str) -> str:
+    """Redige segredos (chaves em URLs, Bearers) antes de ir para o log."""
+    limpo = texto or ""
+    try:
+        for rx, rep in _PADROES_SEGREDO:
+            limpo = rx.sub(rep, limpo)
+    except Exception:
+        return "***"
+    return limpo
+
+
+def tirar_saudacao(resposta: str, nome: str = "") -> str:
+    """Corta saudação inicial repetida ('Olá Isaac! ...', 'Isaac! ...').
+
+    O nome próprio só é cortado quando é o cliente conhecido.
+    Nunca devolve vazio.
+    """
+    texto = _SAUDACAO_INICIAL.sub("", resposta or "", count=1).lstrip()
+    nome_limpo = (nome or "").strip()
+    if nome_limpo:
+        variantes = {nome_limpo, nome_limpo.split()[0]}
+        for variante in sorted(variantes, key=len, reverse=True):
+            if len(variante) >= 3:
+                texto = re.sub(
+                    r"^\s*" + re.escape(variante) + r"\s*[!,]\s*",
+                    "", texto, count=1, flags=re.IGNORECASE,
+                ).lstrip()
+    return texto if texto else (resposta or "").strip()
+
+
+# Marca e assistente: qualquer par parecido vira a forma correcta,
+# menos a forma correcta (guardas). Cobre variantes ainda não vistas.
+_MARCA = re.compile(r"\bNeg[a-z]{1,6}\s+[Pp][a-z]{2,6}\b", re.IGNORECASE)
+_BOTNOME = re.compile(r"\bPlen[a-z]{4,7}\b", re.IGNORECASE)
+
+
+def _fix_marca(m):
+    a, b = m.group(0).split()
+    if a.lower() == "negra" and b.lower() == "plena":
+        return m.group(0)
+    return "Negra Plena"
+
+
+def _fix_botnome(m):
+    w = m.group(0)
+    if w.lower() == "plenitude":
+        return w
+    return "Plenitude"
+
+
+# Outras corrupções observadas no Llama-8B -> forma correcta.
+# Lista fechada (só o que já apareceu nos logs); ordem importa.
+_CORRECOES = [
+    (r"\bservicios\b", "serviços"),
+    (r"\bpasteleira\b|\bpasteleria\b", "pastelaria"),
+    (r"\bmás\b", "mais"),
+    (r"\batenci[oó]n\b", "atenção"),
+    (r"\bsimplicit[eé]\b", "simplicidade"),
+    (r"\bangolanenses\b", "angolanos"),
+    (r"\bangolanense\b", "angolana"),
+    (r"\bEnroladinh[oó]s\b", "enroladinhos"),
+    (r"\bchourisos\b", "chouriços"),
+    (r"\bchouriso\b", "chouriço"),
+    (r"\bBolhas\s+de\s+Berl(?:im|in)\b", "Bolas de Berlim"),
+    (r"\bRiss[oó]i\b", "rissóis"),
+    (r"\bsaudos\b", "salgados"),
+    (r"\bBerlin\b", "Berlim"),
+]
+_CORRECOES_RX = [(re.compile(pat, re.IGNORECASE), rep) for pat, rep in _CORRECOES]
+
+
+def sanitizar(resposta: str) -> str:
+    """Corrige corrupções conhecidas do 8B (nomes, idioma, produtos)."""
+    texto = resposta or ""
+    texto = _MARCA.sub(_fix_marca, texto)
+    texto = _BOTNOME.sub(_fix_botnome, texto)
+    for rx, rep in _CORRECOES_RX:
+        texto = rx.sub(rep, texto)
+    return texto.strip() or (resposta or "").strip()
+
 
 class AIEngine:
     def __init__(self):
         self.memory = MemoryManager(max_history=8)
         self.catalog = CatalogService()
         self.learning = LearningStore()
-
+        self.profiles = ProfileStore()
     def generate_reply(self, numero_crm: str, texto_cliente: str, nome_cliente: str) -> str:
         resposta, _ = self._responder(numero_crm, texto_cliente, nome_cliente, registar=False)
         return resposta
 
-    def responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str) -> tuple:
+    def responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str,
+                  fora_expediente: bool = False) -> tuple:
         """Igual a generate_reply mas regista a troca no aprendizado e devolve o id."""
-        return self._responder(numero_crm, texto_cliente, nome_cliente, registar=True)
+        return self._responder(numero_crm, texto_cliente, nome_cliente,
+                               registar=True, fora_expediente=fora_expediente)
 
     def _responder(self, numero_crm: str, texto_cliente: str, nome_cliente: str,
-                   registar: bool) -> tuple:
+                   registar: bool, fora_expediente: bool = False) -> tuple:
         mensagem_id = uuid.uuid4().hex[:12]
         historico = self.memory.get_context(numero_crm)
         dados_negocio = self.catalog.get_context()
@@ -33,22 +132,38 @@ class AIEngine:
         if exemplos:
             system += f"\n\n{exemplos}"
 
+        perfil_txt = self.profiles.linha_contexto(numero_crm, nome_cliente)
+        if perfil_txt:
+            system += f"\n\n{perfil_txt}"
+
+        emocao_agora = detetar_emocao(user_text)
+        if emocao_agora != "neutro":
+            system += (
+                f"\n\nEMOÇÃO AGORA: o cliente parece {emocao_agora} nesta mensagem. "
+                f"Age segundo o bloco EMOÇÃO do prompt."
+            )
+
+        if fora_expediente:
+            system += (
+                "\n\nHORARIO: Agora está FORA do horário comercial "
+                "(humanos: dias úteis 9h–18h Luanda). Atende na mesma com clareza; "
+                "se pedirem atendimento humano, diz que a equipa responde a partir "
+                "das 9h e que deixas o pedido registado. Nunca prometas contacto "
+                "humano imediato fora de horas."
+            )
+
         user_text = texto_cliente.strip() or "(o cliente enviou uma mensagem sem texto)"
-        mensagens = [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": (
-                    f"{historico}\n\nO cliente {nome_cliente} ({numero_crm}) diz: {user_text}"
-                    if historico
-                    else f"O cliente {nome_cliente} ({numero_crm}) diz: {user_text}"
-                ),
-            },
-        ]
+        atual = f"O cliente {nome_cliente} ({numero_crm}) diz: {user_text}"
+        # Turnos reais (melhor coerência que histórico colado num turno só).
+        mensagens = [{"role": "system", "content": system}]
+        mensagens += self.memory.get_turns(numero_crm)
+        mensagens.append({"role": "user", "content": atual})
+        # Versão corrida só para o caminho Gemini (1 turno de utilizador).
+        texto_corrido = f"{historico}\n\n{atual}" if historico else atual
 
         # Nivel de Hierarquia (Fallback)
-        # 1. OpenRouter -> 2. Groq -> 3. DeepSeek -> 4. Mistral -> 5. Gemini -> 6. Llama Local (ZeroGPU)
-        ordem_provedores = ["openrouter", "groq", "deepseek", "mistral", "gemini", "local_llama"]
+        # 1. OpenRouter -> 2. Groq -> 3. Cerebras -> 4. DeepSeek -> 5. Mistral -> 6. Gemini -> 7. Llama Local (ZeroGPU)
+        ordem_provedores = ["openrouter", "groq", "cerebras", "deepseek", "mistral", "gemini", "local_llama"]
         
         forced_provider = Config.AI_PROVIDER
         if forced_provider and forced_provider != "auto":
@@ -64,6 +179,7 @@ class AIEngine:
                 # Saltar provedores se a respectiva chave de seguranca nao existir
                 if provider == "openrouter" and not Config.OPENROUTER_API_KEY: continue
                 if provider == "groq" and not Config.GROQ_API_KEY: continue
+                if provider == "cerebras" and not Config.CEREBRAS_API_KEY: continue
                 if provider == "deepseek" and not Config.DEEPSEEK_API_KEY: continue
                 if provider == "mistral" and not Config.MISTRAL_API_KEY: continue
                 if provider == "gemini" and not Config.GEMINI_API_KEY: continue
@@ -71,10 +187,16 @@ class AIEngine:
                 print(f"[hierarchy] A tentar gerar resposta usando: {provider}...", flush=True)
                 
                 if provider == "local_llama":
-                    from local_llm import generate_local
-                    resposta = generate_local(mensagens)
+                    from local_llm import em_pausa, generate_local, registar_quota
+                    if em_pausa():
+                        raise RuntimeError("local em pausa por quota (reset pendente)")
+                    try:
+                        resposta = generate_local(mensagens)
+                    except Exception as exc_local:
+                        registar_quota(str(exc_local))
+                        raise
                 elif provider == "gemini":
-                    resposta = self._call_gemini(system, mensagens[1]["content"])
+                    resposta = self._call_gemini(system, texto_corrido)
                 else:
                     resposta = self._call_openai_compatible(provider, mensagens)
                 
@@ -84,20 +206,31 @@ class AIEngine:
                     break
 
             except Exception as exc:
-                print(f"[hierarchy] Falha no provedor {provider}: {exc}", flush=True)
+                detalhe = limpar_segredo(str(exc))
+                print(f"[hierarchy] Falha no provedor {provider}: {detalhe}", flush=True)
+                if any(s in str(exc) for s in ("401", "403", "Unauthorized", "API key")):
+                    print(f"[hierarchy] DICA: {provider} rejeitou a chave — "
+                          f"confira o Secret correspondente no Space.", flush=True)
                 erro_final = exc
                 continue # Se falhou, a hierarquia ignora o erro e avanca para o proximo!
 
         if not resposta:
-            print(f"[hierarchy] TODOS os provedores falharam. Erro final: {erro_final}", flush=True)
+            print(f"[hierarchy] TODOS os provedores falharam. "
+                  f"Erro final: {limpar_segredo(str(erro_final))}", flush=True)
             return (
                 "Peco desculpa, estou com uma instabilidade tecnica no sistema. "
                 "Pode repetir a sua mensagem daqui a instantes?",
                 mensagem_id,
             )
 
+        era_conhecido = int(self.profiles.obter(numero_crm).get("n_trocas", 0) or 0) > 0
+        if era_conhecido:
+            resposta = tirar_saudacao(resposta, nome_cliente)
+        resposta = sanitizar(resposta)
+
         self.memory.add_message(numero_crm, "user", user_text)
         self.memory.add_message(numero_crm, "model", resposta)
+        self.profiles.registar(numero_crm, nome_cliente, user_text)
         if registar:
             modelo = Config.LOCAL_MODEL_ID if provedor_ok == "local_llama" else Config.get_model(provedor_ok)
             self.learning.log_exchange(
@@ -117,7 +250,14 @@ class AIEngine:
         }
         response = requests.post(url, headers=headers, json=payload, timeout=25)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"].strip()
+        try:
+            texto = response.json()["choices"][0]["message"].get("content") or ""
+        except (KeyError, IndexError, TypeError, AttributeError):
+            texto = ""
+        texto = texto.strip()
+        if not texto:
+            raise ValueError(f"resposta vazia de {provider}")
+        return texto
 
     def _call_gemini(self, system: str, user_content: str) -> str:
         model = Config.get_model("gemini")
@@ -132,7 +272,14 @@ class AIEngine:
         }
         response = requests.post(url, json=payload, timeout=25)
         response.raise_for_status()
-        return response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        try:
+            texto = response.json()["candidates"][0]["content"]["parts"][0]["text"] or ""
+        except (KeyError, IndexError, TypeError, AttributeError):
+            texto = ""
+        texto = texto.strip()
+        if not texto:
+            raise ValueError("resposta vazia de gemini")
+        return texto
 
     def _provider_endpoint(self, provider: str):
         if provider == "openrouter":
@@ -145,6 +292,11 @@ class AIEngine:
         if provider == "groq":
             return "https://api.groq.com/openai/v1/chat/completions", {
                 "Authorization": f"Bearer {Config.GROQ_API_KEY}",
+                "Content-Type": "application/json",
+            }
+        if provider == "cerebras":
+            return "https://api.cerebras.ai/v1/chat/completions", {
+                "Authorization": f"Bearer {Config.CEREBRAS_API_KEY}",
                 "Content-Type": "application/json",
             }
         if provider == "deepseek":
