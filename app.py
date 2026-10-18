@@ -1,4 +1,28 @@
 import os
+import sys
+
+# === Compatibilidade Hugging Face Hub (HfFolder foi depreciado nas versoes novas do huggingface_hub) ===
+try:
+    import huggingface_hub
+    if not hasattr(huggingface_hub, "HfFolder"):
+        class _HfFolderShim:
+            @staticmethod
+            def get_token():
+                import os
+                try:
+                    from huggingface_hub import get_token
+                    return get_token()
+                except Exception:
+                    return os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+            @staticmethod
+            def save_token(token):
+                pass
+            @staticmethod
+            def delete_token():
+                pass
+        huggingface_hub.HfFolder = _HfFolderShim
+except Exception as _shim_err:
+    print(f"[boot] HfFolder shim error (non-fatal): {_shim_err}", flush=True)
 
 import gradio as gr
 import uvicorn
@@ -31,7 +55,7 @@ _engine = AIEngine()
 def _demo_reply(pergunta: str) -> str:
     pergunta = (pergunta or "").strip()
     if not pergunta:
-        return "Escreve uma pergunta, por exemplo: quanto custa a pizza?"
+        return "Escreve uma pergunta sobre a pastelaria Negra Plena."
     return _engine.generate_reply("demo", pergunta, "Visitante")
 
 
@@ -48,7 +72,7 @@ with gr.Blocks(title=f"{Config.ASSISTANT_NAME} - {Config.COMPANY_NAME}") as demo
         "API de atendimento usada pelo bot WhatsApp.  \n"
         "`POST /api/escutar` · `GET /health` · `GET /docs`"
     )
-    entrada = gr.Textbox(label="Pergunta de teste", placeholder="quanto custa a pizza?")
+    entrada = gr.Textbox(label="Pergunta de teste", placeholder="Qual é o preço do bolo no pote?")
     btn = gr.Button("Enviar", variant="primary")
     saida = gr.Markdown()
     btn.click(_demo_reply, inputs=entrada, outputs=saida)
@@ -59,8 +83,6 @@ with gr.Blocks(title=f"{Config.ASSISTANT_NAME} - {Config.COMPANY_NAME}") as demo
 app = gr.mount_gradio_app(api_app, demo, path="/", ssr_mode=False)
 
 # ZeroGPU: o demo TEM de ser lançado para o scan de startup detectar o @spaces.GPU.
-# Padrão comprovado (Gradio + ZeroGPU + Uvicorn): launch interno não-bloqueante
-# numa porta livre e fecha; o tráfego real é servido pelo uvicorn na $PORT.
 try:
     demo.launch(prevent_thread_lock=True, server_name="127.0.0.1", server_port=8000)
     demo.close()
@@ -69,8 +91,7 @@ except Exception as exc:
     print(f"[boot] lançamento interno do demo falhou: {exc!r}", flush=True)
 
 # Pré-aquecimento do Llama local: baixa os pesos UMA vez (depois usa o cache
-# do disco) para a primeira resposta não pagar o download. Falha silenciosa
-# com fallback para as APIs externas — nunca impede o arranque.
+# do disco) para a primeira resposta não pagar o download.
 try:
     from local_llm import _ensure_loaded as _warm_llama
     _warm_llama()

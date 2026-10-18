@@ -47,8 +47,8 @@ class AIEngine:
         ]
 
         # Nivel de Hierarquia (Fallback)
-        # 1. Llama Local (ZeroGPU) -> 2. OpenRouter -> 3. Groq -> 4. DeepSeek -> 5. Gemini
-        ordem_provedores = ["local_llama", "openrouter", "groq", "deepseek", "mistral", "gemini"]
+        # 1. OpenRouter -> 2. Groq -> 3. DeepSeek -> 4. Mistral -> 5. Gemini -> 6. Llama Local (ZeroGPU)
+        ordem_provedores = ["openrouter", "groq", "deepseek", "mistral", "gemini", "local_llama"]
         
         forced_provider = Config.AI_PROVIDER
         if forced_provider and forced_provider != "auto":
